@@ -333,6 +333,8 @@ def neo4j_upload(
         The NeoTransformer
 
     """
+    log.info(f"Starting Neo4j upload: {len(inputs)} input files to {uri}")
+    log.info(f"Input format: {input_format}, Compression: {input_compression}, Stream mode: {stream}")
     transformer = Transformer(stream=stream)
     transformer.transform(
         {
@@ -343,9 +345,11 @@ def neo4j_upload(
             "edge_filters": edge_filters,
         }
     )
+    log.info(f"Saving transformed data to Neo4j at {uri}")
     transformer.save(
         {"uri": uri, "username": username, "password": password, "format": "neo4j"}
     )
+    log.info(f"Neo4j upload completed successfully")
     return transformer
 
 

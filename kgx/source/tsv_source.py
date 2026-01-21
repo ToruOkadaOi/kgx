@@ -79,6 +79,7 @@ class TsvSource(Source):
             A generator for node and edge records
 
         """
+        log.info(f"Starting to parse {format} file: {filename}" + (f" with compression: {compression}" if compression else ""))
         if "delimiter" not in kwargs:
             # infer delimiter from file format
             kwargs["delimiter"] = extension_types[format]
@@ -97,6 +98,7 @@ class TsvSource(Source):
         if format == "tsv":
             kwargs["quoting"] = 3
         if mode:
+            log.info(f"Processing compressed archive: {filename}")
             with tarfile.open(filename, mode=mode) as tar:
                 # Alas, the order that tar file members is important in some streaming operations
                 # (e.g. graph-summary and validation) in that generally, all the node files need to be
@@ -116,8 +118,10 @@ class TsvSource(Source):
                             f"Tar archive contains an unrecognized file: {name}. Skipped..."
                         )
 
+                log.info(f"Found {len(node_files)} node files and {len(edge_files)} edge files in archive")
                 # Then, first extract and capture contents of the nodes files...
                 for name in node_files:
+                    log.info(f"Processing node file: {name}")
                     try:
                         member = tar.getmember(name)
                     except KeyError:
@@ -136,11 +140,13 @@ class TsvSource(Source):
                         **kwargs,
                     )
                     for chunk in file_iter:
+                        log.debug(f"Processing node chunk with {len(chunk)} records from {name}")
                         self.node_properties.update(chunk.columns)
                         yield from self.read_nodes(chunk)
 
                 # Next, extract and capture contents of the edges files...
                 for name in edge_files:
+                    log.info(f"Processing edge file: {name}")
                     try:
                         member = tar.getmember(name)
                     except KeyError:
@@ -159,9 +165,11 @@ class TsvSource(Source):
                         **kwargs,
                     )
                     for chunk in file_iter:
+                        log.debug(f"Processing edge chunk with {len(chunk)} records from {name}")
                         self.edge_properties.update(chunk.columns)
                         yield from self.read_edges(chunk)
         else:
+            log.info(f"Processing uncompressed file: {filename}")
             file_iter = pd.read_csv(
                 filename,
                 dtype=str,
@@ -171,11 +179,15 @@ class TsvSource(Source):
                 **kwargs,
             )
             if re.search(f"nodes.{format}", filename):
+                log.info(f"File identified as node file: {filename}")
                 for chunk in file_iter:
+                    log.debug(f"Processing node chunk with {len(chunk)} records")
                     self.node_properties.update(chunk.columns)
                     yield from self.read_nodes(chunk)
             elif re.search(f"edges.{format}", filename):
+                log.info(f"File identified as edge file: {filename}")
                 for chunk in file_iter:
+                    log.debug(f"Processing edge chunk with {len(chunk)} records")
                     self.edge_properties.update(chunk.columns)
                     yield from self.read_edges(chunk)
             else:
@@ -183,6 +195,7 @@ class TsvSource(Source):
                 log.warning(
                     f"Parse function cannot resolve the KGX file type in name {filename}. Skipped..."
                 )
+        log.info(f"Finished parsing {format} file: {filename}")
 
     def read_nodes(self, df: pd.DataFrame) -> Generator:
         """
@@ -221,6 +234,7 @@ class TsvSource(Source):
             # if not None, assumed to have an "id" here...
             node_data = sanitize_import(node.copy(), self.list_delimiter)
             n = node_data["id"]
+            log.debug(f"Read node with id: {n}")
 
             self.set_node_provenance(node_data)  # this method adds provided_by to the node properties/node data
             self.node_properties.update(list(node_data.keys()))
@@ -269,6 +283,7 @@ class TsvSource(Source):
             edge_data["id"] = generate_uuid()
         s = edge_data["subject"]
         o = edge_data["object"]
+        log.debug(f"Read edge: {s} -[{edge_data.get('predicate', 'unknown')}]-> {o}")
         self.set_edge_provenance(edge_data)
         key = generate_edge_key(s, edge_data["predicate"], o)
         self.edge_properties.update(list(edge_data.keys()))
