@@ -41,13 +41,16 @@ class NeoSink(Sink):
     def __init__(self, owner, uri: str, username: str, password: str, **kwargs: Any):
         if "cache_size" in kwargs:
             self.CACHE_SIZE = kwargs["cache_size"]
+        log.info(f"Initializing Neo4j sink with URI: {uri}, cache size: {self.CACHE_SIZE}")
         self.http_driver:Neo4jDriver = GraphDatabase.driver(
             uri, auth=(username, password)
         )
         self.session: Session = self.http_driver.session()
+        log.info("Neo4j connection established successfully")
         super().__init__(owner)
 
     def _flush_node_cache(self):
+        log.info(f"Flushing node cache with {self.node_count} nodes")
         self._write_node_cache()
         self.node_cache.clear()
         self.node_count = 0
@@ -66,6 +69,7 @@ class NeoSink(Sink):
         """
         sanitized_category = self.sanitize_category(record["category"])
         category = self.CATEGORY_DELIMITER.join(sanitized_category)
+        log.debug(f"Writing node with id: {record.get('id', 'unknown')}, category: {category}")
         if self.node_count >= self.CACHE_SIZE:
             self._flush_node_cache()
         if category not in self.node_cache:
@@ -81,6 +85,7 @@ class NeoSink(Sink):
         batch_size = 10000
         categories = self.node_cache.keys()
         filtered_categories = [x for x in categories if x not in self._seen_categories]
+        log.info(f"Writing {len(self.node_cache)} node categories to Neo4j")
         self.create_constraints(filtered_categories)
         for category in self.node_cache.keys():
             log.debug("Generating UNWIND for category: {}".format(category))
@@ -91,13 +96,16 @@ class NeoSink(Sink):
 
             log.debug(query)
             nodes = self.node_cache[category]
+            log.info(f"Writing {len(nodes)} nodes for category: {category}")
             for x in range(0, len(nodes), batch_size):
                 y = min(x + batch_size, len(nodes))
                 log.debug(f"Batch {x} - {y}")
                 batch = nodes[x:y]
                 try:
                     self.session.run(query, parameters={"nodes": batch})
+                    log.debug(f"Successfully wrote batch {x} - {y} for category {category}")
                 except Exception as e:
+                    log.error(f"Failed to write nodes for category {category}, batch {x}-{y}: {str(e)}")
                     self.owner.log_error(
                         entity=f"{category} Nodes {batch}",
                         error_type=ErrorType.INVALID_CATEGORY,
@@ -105,6 +113,7 @@ class NeoSink(Sink):
                     )
 
     def _flush_edge_cache(self):
+        log.info(f"Flushing edge cache with {self.edge_count} edges")
         self._flush_node_cache()
         self._write_edge_cache()
         self.edge_cache.clear()
@@ -126,6 +135,7 @@ class NeoSink(Sink):
             self._flush_edge_cache()
         # self.validate_edge(data)
         edge_predicate = record["predicate"]
+        log.debug(f"Writing edge: {record.get('subject', 'unknown')} -[{edge_predicate}]-> {record.get('object', 'unknown')}")
         if edge_predicate in self.edge_cache:
             self.edge_cache[edge_predicate].append(record)
         else:
@@ -137,10 +147,12 @@ class NeoSink(Sink):
         Write cached edge records to Neo4j.
         """
         batch_size = 10000
+        log.info(f"Writing {len(self.edge_cache)} edge predicates to Neo4j")
         for predicate in self.edge_cache.keys():
             query = self.generate_unwind_edge_query(predicate)
             log.debug(query)
             edges = self.edge_cache[predicate]
+            log.info(f"Writing {len(edges)} edges for predicate: {predicate}")
             for x in range(0, len(edges), batch_size):
                 y = min(x + batch_size, len(edges))
                 batch = edges[x:y]
@@ -150,7 +162,9 @@ class NeoSink(Sink):
                     self.session.run(
                         query, parameters={"relationship": predicate, "edges": batch}
                     )
+                    log.debug(f"Successfully wrote batch {x} - {y} for predicate {predicate}")
                 except Exception as e:
+                    log.error(f"Failed to write edges for predicate {predicate}, batch {x}-{y}: {str(e)}")
                     self.owner.log_error(
                         entity=f"{predicate} Edges {batch}",
                         error_type=ErrorType.INVALID_CATEGORY,
@@ -161,8 +175,10 @@ class NeoSink(Sink):
         """
         Write any remaining cached node and/or edge records.
         """
+        log.info("Finalizing Neo4j sink - writing remaining cached records")
         self._write_node_cache()
         self._write_edge_cache()
+        log.info("Neo4j sink finalized successfully")
 
     @staticmethod
     def sanitize_category(category: List) -> List:
@@ -252,16 +268,20 @@ class NeoSink(Sink):
         """
         categories_set = set(categories)
         categories_set.add(f"`{DEFAULT_NODE_CATEGORY}`")
+        log.info(f"Creating constraints for {len(categories_set)} categories")
         for category in categories_set:
             if self.CATEGORY_DELIMITER in category:
                 subcategories = category.split(self.CATEGORY_DELIMITER)
                 self.create_constraints(subcategories)
             else:
                 query = NeoSink.create_constraint_query(category)
+                log.debug(f"Creating constraint for category: {category}")
                 try:
                     self.session.run(query)
                     self._seen_categories.add(category)
+                    log.debug(f"Constraint created successfully for category: {category}")
                 except Exception as e:
+                    log.error(f"Failed to create constraint for category {category}: {str(e)}")
                     self.owner.log_error(
                         entity=category,
                         error_type=ErrorType.INVALID_CATEGORY,

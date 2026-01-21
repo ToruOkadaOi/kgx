@@ -1,5 +1,6 @@
 from sys import exit
 from typing import List, Tuple, Optional, Dict
+import logging
 import click
 
 import kgx
@@ -30,12 +31,22 @@ def error(msg):
 
 @click.group()
 @click.version_option(version=kgx.__version__, prog_name=kgx.__name__)
-def cli():
+@click.option(
+    "--log-level",
+    "-L",
+    type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], case_sensitive=False),
+    default=None,
+    help="Set the logging level (overrides config.yml)"
+)
+def cli(log_level):
     """
     Knowledge Graph Exchange CLI entrypoint.
     \f
 
     """
+    if log_level:
+        get_logger().setLevel(getattr(logging, log_level.upper()))
+        log.info(f"Log level set to {log_level.upper()}")
     pass
 
 
