@@ -1,5 +1,6 @@
 from sys import exit
 from typing import List, Tuple, Optional, Dict
+import logging
 import click
 
 import kgx
@@ -44,9 +45,7 @@ def cli(log_level):
 
     """
     if log_level:
-        import logging
-        logger = get_logger()
-        logger.setLevel(getattr(logging, log_level.upper()))
+        get_logger().setLevel(getattr(logging, log_level.upper()))
         log.info(f"Log level set to {log_level.upper()}")
     pass
 

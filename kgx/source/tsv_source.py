@@ -79,7 +79,7 @@ class TsvSource(Source):
             A generator for node and edge records
 
         """
-        log.info(f"Starting to parse {format} file: {filename}" + (f" with compression: {compression}" if compression else ""))
+        log.info(f"Starting to parse {format} file: {filename}{f' with compression: {compression}' if compression else ''}")
         if "delimiter" not in kwargs:
             # infer delimiter from file format
             kwargs["delimiter"] = extension_types[format]
